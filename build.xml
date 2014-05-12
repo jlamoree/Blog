@@ -1,0 +1,213 @@
+<?xml version="1.0" encoding="utf-8"?>
+
+<project name="Blog" default="init" basedir=".">
+
+	<taskdef resource="net/sf/antcontrib/antcontrib.properties">
+		<classpath>
+			<pathelement location="build/lib/ant-contrib-1.0b2.jar"/>
+		</classpath>
+	</taskdef>
+
+	<tstamp>
+		<format property="deploy.release" pattern="yyyyMMddHHmmss"/>
+	</tstamp>
+
+	<property name="project.version" value="1.0"/>
+	<property name="project.build" location="build"/>
+	<property name="project.src" location="src"/>
+	<property name="project.test" location="test"/>
+	<property name="project.cache" location="${project.build}/cache"/>
+	<property name="project.work" location="${project.build}/work"/>
+	<property name="project.deps" value="https://s3.amazonaws.com/jlamoree-dev/x"/>
+
+	<property file="${project.build}/${user.name}.properties"/>
+	<property file="${project.build}/${server.name}.properties"/>
+
+	<property name="test.results" location="${project.build}/results"/>
+
+	<property name="nginx.host" value="lamoree.com"/>
+	<property name="nginx.port" value="80"/>
+
+	<property name="tomcat.home" location="/home/joseph/tomcat/blog"/>
+	<property name="tomcat.approot" location="${tomcat.home}/webapps/ROOT"/>
+
+	<property name="webapp.ip" value="127.0.0.1"/>
+	<property name="webapp.host" value="localhost"/>
+	<property name="webapp.port" value="8080"/>
+	<property name="webapp.path" location="${tomcat.approot}"/>
+	<property name="webapp.version" value="${project.version}"/>
+	<property name="webapp.revision" value="${deploy.release}"/>
+	<property name="webapp.environment" value="production"/>
+	<property name="webapp.datasource" value="blog"/>
+	<property name="webapp.log.dir" value="${webapp.path}/WEB-INF/railo/logs"/>
+
+	<property name="file.tasks.macro" location="${project.build}/macrodefs/file-tasks.xml"/>
+	<import file="${file.tasks.macro}"/>
+
+	<property name="coldbox.dist" value="coldbox_standalone_3.8.1.zip"/>
+	<property name="coldbox.hash" value="e6ccde8faddfdda8970cf9a23798a42d755c68e6"/>
+	<property name="coldbox.path" location="${webapp.path}/coldbox"/>
+	<property name="coldbox.reinit.password" value="true"/>
+
+	<property name="bootstrap.dist" value="bootstrap-3.1.1-dist.zip"/>
+	<property name="bootstrap.hash" value="fac3aaa47af98bb4c3425cc9d4e2214fcdf95cc2"/>
+
+	<property name="appProxy.serverHostHeaderName" value="X-NGINX-Host"/>
+	<property name="appProxy.serverAddressHeaderName" value="X-NGINX-Server-IP"/>
+	<property name="appProxy.serverPortHeaderName" value="X-NGINX-Server-Port"/>
+	<property name="appProxy.clientAddressHeaderName" value="X-NGINX-Client-IP"/>
+	<property name="appProxy.secureEndpointHeaderName" value="X-NGINX-Secure-Endpoint"/>
+	<property name="geoIp.countryHeaderName" value="X-NGINX-GeoIP-Country"/>
+	<property name="geoIp.regionCodeHeaderName" value="X-NGINX-GeoIP-Region-Code"/>
+	<property name="geoIp.regionNameHeaderName" value="X-NGINX-GeoIP-Region-Name"/>
+	<property name="geoIp.cityHeaderName" value="X-NGINX-GeoIP-City"/>
+	<property name="geoIp.coordsHeaderName" value="X-NGINX-GeoIP-Coords"/>
+	<property name="geoIp.dmaCodeHeaderName" value="X-NGINX-GeoIP-DMA-Code"/>
+
+	<target name="init">
+		<fail message="The webapp path (${webapp.path}) does not exist.">
+			<condition>
+				<not>
+					<available file="${webapp.path}" type="dir"/>
+				</not>
+			</condition>
+		</fail>
+
+		<mkdir dir="${project.cache}"/>
+		<delete dir="${project.work}"/>
+		<mkdir dir="${project.work}"/>
+	</target>
+
+	<target name="deploy-all" depends="init" description="Run all the deploy targets in sequence.">
+		<antcall target="deploy-libs"/>
+		<antcall target="deploy-app"/>
+		<antcall target="deploy-js-css"/>
+		<antcall target="deploy-resources"/>
+	</target>
+	
+	<target name="undeploy" depends="init" description="Remove application and dependencies from application server.">
+		<delete includeemptydirs="true">
+			<fileset dir="${webapp.path}">
+				<include name="**/*"/>
+				<exclude name="WEB-INF/"/>
+			</fileset>
+		</delete>
+	</target>
+
+	<target name="deploy-libs" depends="init" description="Copy required libraries to the deploy path.">
+		<requirefile file="${project.cache}/${coldbox.dist}" url="${project.deps}/${coldbox.dist}"/>
+		<verifyfile file="${project.cache}/${coldbox.dist}" hash="${coldbox.hash}"/>
+
+		<delete dir="${coldbox.path}"/>
+		<mkdir dir="${coldbox.path}"/>
+		<unzip src="${project.cache}/${coldbox.dist}" dest="${coldbox.path}">
+			<patternset>
+				<include name="coldbox/**"/>
+			</patternset>
+			<regexpmapper from="^coldbox/(.+)$$" to="\1"/>
+		</unzip>
+		<delete dir="${coldbox.path}/coldbox"/>
+		<unzip src="${project.cache}/${coldbox.dist}" dest="${coldbox.path}">
+			<patternset>
+				<include name="license.txt"/>
+				<include name="coldbox-buildID-*"/>
+			</patternset>
+		</unzip>
+
+		<requirefile file="${project.cache}/${bootstrap.dist}" url="${project.deps}/${bootstrap.dist}"/>
+		<verifyfile file="${project.cache}/${bootstrap.dist}" hash="${bootstrap.hash}"/>
+
+		<mkdir dir="${project.work}/bootstrap"/>
+		<unzip src="${project.cache}/${bootstrap.dist}" dest="${project.work}/bootstrap">
+			<patternset>
+				<include name="bootstrap-*/**"/>
+			</patternset>
+			<regexpmapper from="^bootstrap-[^/]+/(.+)$$" to="\1"/>
+		</unzip>
+
+		<copy todir="${webapp.path}">
+			<fileset dir="${project.work}/bootstrap">
+				<include name="**/*.js"/>
+				<include name="**/*.css"/>
+				<include name="fonts/*"/>
+			</fileset>
+		</copy>
+	</target>
+
+	<target name="deploy-app" depends="init" description="Deploy all application files to webroot, making necessary modifications.">
+		<copy todir="${webapp.path}" overwrite="true">
+			<fileset dir="${project.src}">
+				<include name="**/*.cf?"/>
+				<include name="favicon.ico"/>
+				<include name="robots.txt"/>
+			</fileset>
+		</copy>
+
+		<copy todir="${webapp.path}" overwrite="true">
+			<fileset dir="${project.src}">
+				<include name="Application.cfc"/>
+			</fileset>
+			<filterset>
+				<filter token="WEBAPP_VERSION" value="${webapp.version}"/>
+				<filter token="WEBAPP_REVISION" value="${webapp.revision}"/>
+				<filter token="WEBAPP_ENVIRONMENT" value="${webapp.environment}"/>
+				<filter token="WEBAPP_DATASOURCE" value="${webapp.datasource}"/>
+			</filterset>
+		</copy>
+		
+		<copy todir="${webapp.path}" overwrite="true">
+			<fileset dir="${project.src}">
+				<include name="ConnectionInspector.cfc"/>
+			</fileset>
+			<filterset>
+				<filter token="APP_PROXY_ENABLED" value="${appProxy.enabled}"/>
+				<filter token="APP_PROXY_SERVER_HOST_HEADER_NAME" value="${appProxy.serverHostHeaderName}"/>
+				<filter token="APP_PROXY_SERVER_ADDRESS_HEADER_NAME" value="${appProxy.serverAddressHeaderName}"/>
+				<filter token="APP_PROXY_SERVER_PORT_HEADER_NAME" value="${appProxy.serverPortHeaderName}"/>
+				<filter token="APP_PROXY_CLIENT_ADDRESS_HEADER_NAME" value="${appProxy.clientAddressHeaderName}"/>
+				<filter token="APP_PROXY_SECURE_ENDPOINT_HEADER_NAME" value="${appProxy.secureEndpointHeaderName}"/>
+				<filter token="GEOIP_COUNTRY_HEADER_NAME" value="${geoIp.countryHeaderName}"/>
+				<filter token="GEOIP_REGION_CODE_HEADER_NAME" value="${geoIp.regionCodeHeaderName}"/>
+				<filter token="GEOIP_REGION_NAME_HEADER_NAME" value="${geoIp.regionNameHeaderName}"/>
+				<filter token="GEOIP_CITY_HEADER_NAME" value="${geoIp.cityHeaderName}"/>
+				<filter token="GEOIP_COORDS_HEADER_NAME" value="${geoIp.coordsHeaderName}"/>
+				<filter token="GEOIP_DMA_CODE_HEADER_NAME" value="${geoIp.dmaCodeHeaderName}"/>
+			</filterset>
+		</copy>
+
+		<copy todir="${webapp.path}/config" overwrite="true">
+			<fileset dir="${project.src}/config">
+				<include name="Coldbox.cfc"/>
+			</fileset>
+			<filterset>
+				<filter token="WEBAPP_VERSION" value="${webapp.version}"/>
+				<filter token="WEBAPP_REVISION" value="${webapp.revision}"/>
+				<filter token="WEBAPP_ENVIRONMENT" value="${webapp.environment}"/>
+				<filter token="WEBAPP_LOG_DIR" value="${webapp.log.dir}"/>
+				<filter token="COLDBOX_REINIT_PASSWORD" value="${coldbox.reinit.password}"/>
+			</filterset>
+		</copy>
+	</target>
+
+	<target name="deploy-js-css" depends="init" description="Deploy all the JavaScript and CSS.">
+		<copy todir="${webapp.path}/js" overwrite="true">
+			<fileset dir="${project.src}/js">
+				<include name="**/*.js"/>
+			</fileset>
+		</copy>
+		<copy todir="${webapp.path}/css" overwrite="true">
+			<fileset dir="${project.src}/css">
+				<include name="**/*.css"/>
+			</fileset>
+		</copy>
+	</target>
+
+	<target name="deploy-resources" depends="init" description="Deploy resource files like images and downloadable documents.">
+		<copy todir="${webapp.path}" overwrite="true">
+			<fileset dir="${project.src}/images">
+				<include name="**/*"/>
+			</fileset>
+		</copy>
+	</target>
+
+</project>

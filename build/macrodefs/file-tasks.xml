@@ -1,0 +1,26 @@
+<project>
+
+	<macrodef name="requirefile">
+		<attribute name="file"/>
+		<attribute name="url"/>
+
+		<sequential>
+			<get src="@{url}" dest="@{file}" skipexisting="true"/>
+		</sequential>
+	</macrodef>
+
+	<macrodef name="verifyfile">
+		<attribute name="file"/>
+		<attribute name="hash"/>
+
+		<sequential>
+			<checksum file="@{file}" algorithm="sha1" property="@{hash}" verifyproperty="valid"/>
+			<fail message="The SHA hash for @{file} does not match @{hash}.">
+				<condition>
+					<isfalse value="${valid}"/>
+				</condition>
+			</fail>
+		</sequential>
+	</macrodef>
+
+</project>

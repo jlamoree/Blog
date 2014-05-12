@@ -1,5 +1,5 @@
 Blog
 ====
 
-This is a CFML blog application build on ColdBox, Railo, Bootstrap, and MongoDB.
+This is a CFML blog application built on ColdBox, Railo, Bootstrap, and MongoDB.
 

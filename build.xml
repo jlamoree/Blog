@@ -84,7 +84,7 @@
 		<antcall target="deploy-js-css"/>
 		<antcall target="deploy-resources"/>
 	</target>
-	
+
 	<target name="undeploy" depends="init" description="Remove application and dependencies from application server.">
 		<delete includeemptydirs="true">
 			<fileset dir="${webapp.path}">
@@ -154,7 +154,7 @@
 				<filter token="WEBAPP_DATASOURCE" value="${webapp.datasource}"/>
 			</filterset>
 		</copy>
-		
+
 		<copy todir="${webapp.path}" overwrite="true">
 			<fileset dir="${project.src}">
 				<include name="ConnectionInspector.cfc"/>
@@ -203,8 +203,16 @@
 	</target>
 
 	<target name="deploy-resources" depends="init" description="Deploy resource files like images and downloadable documents.">
-		<copy todir="${webapp.path}" overwrite="true">
+		<copy todir="${webapp.path}/images" overwrite="true">
 			<fileset dir="${project.src}/images">
+				<include name="**/*"/>
+			</fileset>
+		</copy>
+	</target>
+
+	<target name="deploy-tests" depends="init" description="Deploy all tests.">
+		<copy todir="${webapp.path}/test" overwrite="true">
+			<fileset dir="${project.test}">
 				<include name="**/*"/>
 			</fileset>
 		</copy>
